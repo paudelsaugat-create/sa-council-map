@@ -4,114 +4,110 @@ import urllib.parse
 import urllib.request
 from bs4 import BeautifulSoup
 
+# Official list of South Australian local councils to match against
+SA_COUNCILS = [
+    "Adelaide Hills Council", "Adelaide Plains Council", "Alexandrina Council",
+    "Barossa Council", "Barunga West Council", "Berri Barmera Council",
+    "Campbelltown City Council", "City of Adelaide", "City of Burnside",
+    "City of Charles Sturt", "City of Holdfast Bay", "City of Marion",
+    "City of Mitcham", "City of Norwood Payneham and St Peters",
+    "City of Norwood Payneham & St Peters", "City of Onkaparinga",
+    "City of Playford", "City of Port Adelaide Enfield", "City of Port Lincoln",
+    "City of Prospect", "City of Salisbury", "City of Tea Tree Gully",
+    "City of Unley", "City of Victor Harbor", "City of West Torrens",
+    "City of Whyalla", "Clare and Gilbert Valleys Council", "Cleve District Council",
+    "Coorong District Council", "Copper Coast Council", "District Council of Ceduna",
+    "District Council of Cleve", "District Council of Coober Pedy",
+    "District Council of Elliston", "District Council of Franklin Harbour",
+    "District Council of Grant", "District Council of Karoonda East Murray",
+    "District Council of Kimba", "District Council of Lower Eyre Peninsula",
+    "District Council of Loxton Waikerie", "District Council of Mount Remarkable",
+    "District Council of Orroroo Carrieton", "District Council of Peterborough",
+    "District Council of Robe", "District Council of Streaky Bay",
+    "District Council of Tumby Bay", "District Council of Yankalilla",
+    "Flinders Ranges Council", "Kangaroo Island Council", "Kingston District Council",
+    "Light Regional Council", "Lower Eyre Council", "Mid Murray Council",
+    "Mount Barker District Council", "Mount Gambier City Council", "City of Mount Gambier",
+    "Municipal Council of Roxby Downs", "Naracoorte Lucindale Council",
+    "Northern Areas Council", "Port Augusta City Council", "Port Pirie Regional Council",
+    "Regional Council of Goyder", "Renmark Paringa Council", "Rural City of Murray Bridge",
+    "Southern Limestone Coast Council", "Southern Mallee District Council",
+    "Tatiara District Council", "Town of Gawler", "Town of Walkerville",
+    "Wakefield Regional Council", "Wattle Range Council", "Wudinna District Council",
+    "Yorke Peninsula Council"
+]
+
 BASE_URL = "https://www.localcouncils.sa.gov.au/careers/job-search"
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    )
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
 
 vacancies_by_council = {}
 
-# Match SA council designations
-COUNCIL_REGEX = re.compile(
-    r"\b(City of [A-Za-z\s]+|District Council of [A-Za-z\s]+|Town of [A-Za-z\s]+|"
-    r"Regional Council of [A-Za-z\s]+|Rural City of [A-Za-z\s]+|[A-Za-z\s]+ City Council|"
-    r"[A-Za-z\s]+ Regional Council|[A-Za-z\s]+ District Council|[A-Za-z\s]+ Council)\b",
-    re.IGNORECASE,
-)
-
-# Traverse pages 1 through 10 (ranks 1, 11, 21, ..., 91)
-for rank in range(1, 120, 10):
-    params = {
-        "collection": "all-councils-employment-push",
-        "current_page": "1332517",
-        "fmo": "true",
-        "meta_status": "live",
-        "profile": "careers",
-        "query": "!showall",
-        "start_rank": str(rank),
-    }
-
-    url = f"{BASE_URL}?{urllib.parse.urlencode(params)}"
-    print(f"Fetching listings at rank {rank}...")
+# Iterate over pagination ranks (1, 11, 21, ..., up to 151)
+for rank in range(1, 160, 10):
+    url = f"{BASE_URL}?start_rank={rank}"
+    print(f"Fetching: {url}")
 
     try:
         req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=25) as resp:
             html = resp.read().decode("utf-8")
     except Exception as e:
-        print(f"Failed to fetch rank {rank}: {e}")
+        print(f"Failed to fetch {url}: {e}")
         break
 
     soup = BeautifulSoup(html, "html.parser")
     found_on_page = 0
 
-    # Locate links with the 'opens in a new tab' marker or external career redirects
+    # Scan all links across the page
     for a in soup.find_all("a", href=True):
         raw_text = a.get_text(" ", strip=True)
+        clean_title = re.sub(r"-\s*opens in a new tab.*", "", raw_text, flags=re.IGNORECASE).strip()
 
-        if "opens in a new tab" not in raw_text.lower():
+        if len(clean_title) < 4:
             continue
 
-        clean_title = re.sub(
-            r"-\s*opens in a new tab.*", "", raw_text, flags=re.IGNORECASE
-        ).strip()
-        if len(clean_title) < 3:
+        # Look around the surrounding DOM card block
+        container = a.find_parent(["li", "article", "div"])
+        if not container:
             continue
 
-        job_url = a["href"].strip()
-        if not job_url.startswith("http"):
-            job_url = f"https://www.localcouncils.sa.gov.au{job_url}"
+        block_text = container.get_text(" ", strip=True)
 
-        # Locate the parent job card
-        card = a.find_parent(["li", "article", "div", "section"])
-        if not card:
-            continue
+        # Check if any known council name is inside this job card
+        matched_council = None
+        for council in SA_COUNCILS:
+            if council.lower() in block_text.lower():
+                matched_council = council
+                break
 
-        lines = [l.strip() for l in card.get_text("\n", strip=True).splitlines() if l.strip()]
-        council_name = None
+        if matched_council:
+            # Clean link
+            href = a["href"].strip()
+            job_url = href if href.startswith("http") else f"https://www.localcouncils.sa.gov.au{href}"
 
-        # The council name appears on the text line immediately below the title
-        for idx, line in enumerate(lines):
-            clean_l = re.sub(
-                r"-\s*opens in a new tab.*", "", line, flags=re.IGNORECASE
-            ).strip()
-            if clean_l == clean_title and idx + 1 < len(lines):
-                candidate = lines[idx + 1]
-                if not any(
-                    w in candidate.lower()
-                    for w in ["category", "type", "closing date", "full time", "part time"]
-                ):
-                    council_name = candidate
-                    break
+            # Standardize council name variations
+            if matched_council == "City of Norwood Payneham and St Peters":
+                matched_council = "City of Norwood Payneham & St Peters"
 
-        if not council_name:
-            match = COUNCIL_REGEX.search(card.get_text(" ", strip=True))
-            if match:
-                council_name = match.group(1).strip()
+            if matched_council not in vacancies_by_council:
+                vacancies_by_council[matched_council] = []
 
-        if council_name:
-            council_name = " ".join(council_name.split()).strip()
-
-            if council_name not in vacancies_by_council:
-                vacancies_by_council[council_name] = []
-
-            if not any(j["title"] == clean_title for j in vacancies_by_council[council_name]):
-                vacancies_by_council[council_name].append(
-                    {"title": clean_title, "url": job_url}
-                )
+            # Avoid adding duplicate titles to the same council
+            if not any(j["title"] == clean_title for j in vacancies_by_council[matched_council]):
+                vacancies_by_council[matched_council].append({
+                    "title": clean_title,
+                    "url": job_url
+                })
                 found_on_page += 1
 
+    print(f"Found {found_on_page} positions at rank {rank}.")
     if found_on_page == 0:
-        print(f"End of job results reached at rank {rank}.")
         break
 
-# Write out populated JSON
 with open("sa_vacancies.json", "w", encoding="utf-8") as f:
     json.dump(vacancies_by_council, f, indent=2, ensure_ascii=False)
 
-total = sum(len(jobs) for jobs in vacancies_by_council.values())
-print(f"Extraction complete: Saved {total} vacancies across {len(vacancies_by_council)} councils.")
+total = sum(len(j) for j in vacancies_by_council.values())
+print(f"Done! Successfully saved {total} vacancies across {len(vacancies_by_council)} councils.")

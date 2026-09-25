@@ -43,7 +43,16 @@ HEADERS = {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
-    )
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-AU,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+    "Referer": "https://www.localcouncils.sa.gov.au/careers",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
 }
 
 vacancies_by_council = {}
@@ -66,11 +75,24 @@ for start in range(1, 150, 10):
         req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=25) as resp:
             status = resp.getcode()
-            html = resp.read().decode("utf-8")
+            raw = resp.read()
+            if resp.headers.get("Content-Encoding") == "gzip":
+                import gzip
+                raw = gzip.decompress(raw)
+            html = raw.decode("utf-8", errors="replace")
             print(f"Status: {status} | Response length: {len(html)} chars")
             print("First 500 chars of response:")
             print(html[:500])
             print("---")
+    except urllib.error.HTTPError as e:
+        print(f"Failed to fetch {url}: HTTP Error {e.code}: {e.reason}")
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+            print("Error page body (first 500 chars):")
+            print(body[:500])
+        except Exception:
+            pass
+        break
     except Exception as e:
         print(f"Failed to fetch {url}: {e}")
         break

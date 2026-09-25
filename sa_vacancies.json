@@ -125,13 +125,47 @@
       "url": "https://www.nacouncil.sa.gov.au/council/employment"
     }
   ],
-  "Wattle Range Council": [
+  "District Council of Grant": [
     {
       "title": "Community Ranger",
-      "url": "https://www.wattlerange.sa.gov.au/our-council/employment-opportunities"
+      "url": "https://www.dcgrant.sa.gov.au/council/employment"
     },
     {
       "title": "Plant Operator/Maintenance Employee",
+      "url": "https://www.dcgrant.sa.gov.au/council/employment"
+    }
+  ],
+  "Wattle Range Council": [
+    {
+      "title": "Technical Officer",
+      "url": "https://www.wattlerange.sa.gov.au/our-council/employment-opportunities"
+    },
+    {
+      "title": "Engineer",
+      "url": "https://www.wattlerange.sa.gov.au/our-council/employment-opportunities"
+    },
+    {
+      "title": "Childcare Educator (Bachelor)",
+      "url": "https://www.wattlerange.sa.gov.au/our-council/employment-opportunities"
+    },
+    {
+      "title": "Childcare Educator (Certificate III)",
+      "url": "https://www.wattlerange.sa.gov.au/our-council/employment-opportunities"
+    },
+    {
+      "title": "Childcare Educator (Bachelor) - Casual",
+      "url": "https://www.wattlerange.sa.gov.au/our-council/employment-opportunities"
+    },
+    {
+      "title": "Childcare Educator (Certificate III) - Casual",
+      "url": "https://www.wattlerange.sa.gov.au/our-council/employment-opportunities"
+    },
+    {
+      "title": "Tourism and Customer Support Officer (Penola)",
+      "url": "https://www.wattlerange.sa.gov.au/our-council/employment-opportunities"
+    },
+    {
+      "title": "Tourism and Customer Support Officer (Casual)",
       "url": "https://www.wattlerange.sa.gov.au/our-council/employment-opportunities"
     }
   ],

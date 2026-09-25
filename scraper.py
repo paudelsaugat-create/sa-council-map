@@ -62,10 +62,15 @@ for start in range(1, 150, 10):
     url = f"{BASE_URL}?{urllib.parse.urlencode(params)}"
     print(f"Fetching: {url}")
 
-    try:
+        try:
         req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=25) as resp:
+            status = resp.getcode()
             html = resp.read().decode("utf-8")
+            print(f"Status: {status} | Response length: {len(html)} chars")
+            print("First 500 chars of response:")
+            print(html[:500])
+            print("---")
     except Exception as e:
         print(f"Failed to fetch {url}: {e}")
         break

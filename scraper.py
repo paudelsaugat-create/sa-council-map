@@ -1,88 +1,131 @@
 import json
 import re
+import urllib.parse
 import urllib.request
 from bs4 import BeautifulSoup
 
-URL = "https://www.localcouncils.sa.gov.au/careers/job-search"
-req = urllib.request.Request(
-    URL,
-    headers={
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        )
-    },
-)
+BASE_URL = "https://www.localcouncils.sa.gov.au/careers/job-search"
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+}
 
-try:
-    with urllib.request.urlopen(req) as resp:
-        html = resp.read().decode("utf-8")
-except Exception as e:
-    print(f"Error fetching URL: {e}")
-    html = ""
-
-soup = BeautifulSoup(html, "html.parser")
-vacancies = {}
+vacancies_by_council = {}
 
 # Match official SA Local Council naming patterns
 COUNCIL_REGEX = re.compile(
-    r"\b(City of [A-Za-z\s]+|District Council of [A-Za-z\s]+|Town of [A-Za-z\s]+|"
-    r"Regional Council of [A-Za-z\s]+|Rural City of [A-Za-z\s]+|[A-Za-z\s]+ City Council|"
-    r"[A-Za-z\s]+ Regional Council|[A-Za-z\s]+ District Council|[A-Za-z\s]+ Council)\b",
+    r"\b([A-Za-z\s]+(?:City Council|District Council|Regional Council|Rural City Council|Council)|"
+    r"City of [A-Za-z\s]+|District Council of [A-Za-z\s]+|Town of [A-Za-z\s]+|Regional Council of [A-Za-z\s]+)\b",
     re.IGNORECASE,
 )
 
-# Look through all links pointing to careers/job details or external ATS portals
-for a in soup.find_all("a", href=True):
-    href = a["href"].strip()
-    raw_title = a.get_text(" ", strip=True)
+# Loop across pagination ranks (1, 11, 21, ..., up to rank 251)
+for rank in range(1, 260, 10):
+    params = {
+        "collection": "all-councils-employment-push",
+        "current_page": "1332517",
+        "fmo": "true",
+        "meta_status": "live",
+        "profile": "careers",
+        "query": "!showall",
+        "start_rank": str(rank),
+    }
 
-    # Clean the title text
-    title = re.sub(r"-\s*opens in a new tab", "", raw_title, flags=re.IGNORECASE).strip()
+    req_url = f"{BASE_URL}?{urllib.parse.urlencode(params)}"
+    print(f"Scraping rank {rank}...")
 
-    # Skip site header navigation or trivial link anchors
-    if len(title) < 4 or any(
-        skip in title.lower()
-        for skip in [
-            "job search",
-            "career pathways",
-            "graduate programs",
-            "apprenticeships",
-            "volunteering",
-            "benefits",
-            "find your council",
-        ]
-    ):
-        continue
+    try:
+        req = urllib.request.Request(req_url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            html = resp.read().decode("utf-8")
+    except Exception as e:
+        print(f"Error loading rank {rank}: {e}")
+        break
 
-    # Identify the job card container
-    parent = a.find_parent(["li", "article", "tr", "div"])
-    if not parent:
-        continue
+    soup = BeautifulSoup(html, "html.parser")
 
-    parent_text = parent.get_text(" ", strip=True)
+    # Find job links with external tab icon or job URLs
+    links = soup.find_all("a", href=True)
+    found_on_page = 0
 
-    # Extract council name from the enclosing card block
-    match = COUNCIL_REGEX.search(parent_text)
-    if match:
-        council_name = " ".join(match.group(1).split()).strip()
+    for a in links:
+        href = a["href"].strip()
+        raw_title = a.get_text(" ", strip=True)
 
-        # Ignore accidental menu item catches
-        if council_name.lower() in ["find your council", "careers in council"]:
+        # Skip headers, footers, pagination controls
+        if any(
+            skip in raw_title.lower()
+            for skip in [
+                "next",
+                "prev",
+                "previous",
+                "sort",
+                "show",
+                "career",
+                "contact",
+                "privacy",
+            ]
+        ):
             continue
 
-        full_url = href if href.startswith("http") else f"https://www.localcouncils.sa.gov.au{href}"
+        # Check if the link looks like a job title link
+        if len(raw_title) < 5 or href.startswith("#"):
+            continue
 
-        if council_name not in vacancies:
-            vacancies[council_name] = []
+        # Look up the DOM tree to find the card boundary
+        card = a.find_parent(["li", "article", "div", "section"])
+        if not card:
+            continue
 
-        if not any(j["title"] == title for j in vacancies[council_name]):
-            vacancies[council_name].append({"title": title, "url": full_url})
+        card_text = card.get_text("\n", strip=True)
+        lines = [line.strip() for line in card_text.splitlines() if line.strip()]
 
-# Save output
+        # The council name is typically the line immediately after the job title
+        council_name = None
+
+        # Method A: Exact line matching
+        for i, line in enumerate(lines):
+            clean_l = re.sub(r"-\s*opens in a new tab", "", line, flags=re.IGNORECASE).strip()
+            if clean_l == raw_title and i + 1 < len(lines):
+                next_line = lines[i + 1]
+                if not any(k in next_line.lower() for k in ["category", "type", "closing date", "full time", "part time"]):
+                    council_name = next_line
+                    break
+
+        # Method B: Regular expression search inside card text
+        if not council_name:
+            match = COUNCIL_REGEX.search(card_text)
+            if match:
+                council_name = match.group(1).strip()
+
+        if council_name:
+            # Clean up artifacts
+            council_name = " ".join(council_name.split()).strip()
+            title = re.sub(r"-\s*opens in a new tab", "", raw_title, flags=re.IGNORECASE).strip()
+            job_url = href if href.startswith("http") else f"https://www.localcouncils.sa.gov.au{href}"
+
+            if council_name not in vacancies_by_council:
+                vacancies_by_council[council_name] = []
+
+            # Avoid duplicates
+            if not any(j["url"] == job_url or j["title"] == title for j in vacancies_by_council[council_name]):
+                vacancies_by_council[council_name].append({
+                    "title": title,
+                    "url": job_url
+                })
+                found_on_page += 1
+
+    # Stop pagination when a page produces no new listings
+    if found_on_page == 0:
+        print(f"No additional listings found at rank {rank}. Stopping.")
+        break
+
+# Write out collected vacancies
 with open("sa_vacancies.json", "w", encoding="utf-8") as f:
-    json.dump(vacancies, f, indent=2, ensure_ascii=False)
+    json.dump(vacancies_by_council, f, indent=2, ensure_ascii=False)
 
-total_jobs = sum(len(j) for j in vacancies.values())
-print(f"Scraped {total_jobs} active vacancies across {len(vacancies)} councils.")
+total = sum(len(v) for v in vacancies_by_council.values())
+print(f"Success: Extracted {total} vacancies across {len(vacancies_by_council)} councils.")
